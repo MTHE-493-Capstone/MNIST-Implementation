@@ -3,7 +3,7 @@ from pathlib import Path
 
 import torch
 
-DATA_PATH = Path(__file__).parent / "data" / "mnist.pt"
+DATA_PATH = Path(__file__).parent.parent / "data" / "mnist.pt"
 
 
 def get_device() -> torch.device:
