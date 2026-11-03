@@ -1,3 +1,4 @@
+import argparse
 import copy
 import json
 import time
@@ -16,10 +17,9 @@ LR_STEP_EPOCHS = 2
 LR_GAMMA = 0.97
 EPOCHS = 200
 BATCH_SIZE = 100
-SEED = 0
 EMA_DECAY = 0.999
-LOG_PATH = Path(__file__).parent.parent / "logs" / "baseline.json"
-CHECKPOINT_PATH = Path(__file__).parent.parent / "checkpoints" / "baseline.pt"
+LOG_DIR = Path(__file__).parent.parent / "logs"
+CHECKPOINT_DIR = Path(__file__).parent.parent / "checkpoints"
 
 
 def make_optimizer(model: nn.Module) -> torch.optim.Adam:
@@ -47,13 +47,24 @@ def cpu_state_dict(model: nn.Module) -> dict[str, torch.Tensor]:
 
 
 @torch.no_grad()
+def count_errors(model: nn.Module, X: torch.Tensor, y: torch.Tensor) -> int:
+    return int((model(X).argmax(dim=1) != y).sum().item())
+
+
+@torch.no_grad()
 def evaluate(model: nn.Module, X: torch.Tensor, y: torch.Tensor) -> tuple[float, float]:
     logits = model(X)
     return cross_entropy_bits(logits, y).item(), (logits.argmax(dim=1) == y).float().mean().item()
 
 
 def main() -> None:
-    torch.manual_seed(SEED)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=0)
+    seed = parser.parse_args().seed
+    log_path = LOG_DIR / f"baseline_seed{seed}.json"
+    checkpoint_path = CHECKPOINT_DIR / f"baseline_seed{seed}.pt"
+
+    torch.manual_seed(seed)
     device = get_device()
     X_train, y_train, X_test, y_test = load_mnist(device)
     model = MLP().to(device)
@@ -67,12 +78,12 @@ def main() -> None:
         "lr_gamma": LR_GAMMA,
         "epochs": EPOCHS,
         "batch_size": BATCH_SIZE,
-        "seed": SEED,
+        "seed": seed,
         "ema_decay": EMA_DECAY,
     }
     history = []
-    LOG_PATH.parent.mkdir(exist_ok=True)
-    print(f"device {device}  epochs {EPOCHS}  batch {BATCH_SIZE}  steps/epoch {len(X_train) // BATCH_SIZE}")
+    LOG_DIR.mkdir(exist_ok=True)
+    print(f"seed {seed}  device {device}  epochs {EPOCHS}  batch {BATCH_SIZE}  steps/epoch {len(X_train) // BATCH_SIZE}")
 
     for epoch in range(1, EPOCHS + 1):
         start = time.perf_counter()
@@ -107,14 +118,30 @@ def main() -> None:
                 "test_acc": test_acc,
             }
         )
-        LOG_PATH.write_text(json.dumps({"config": config, "history": history}, indent=2))
+        log_path.write_text(json.dumps({"config": config, "history": history}, indent=2))
 
-    CHECKPOINT_PATH.parent.mkdir(exist_ok=True)
+    test_errors = count_errors(ema_model, X_test, y_test)
+    final = {
+        "test_errors": test_errors,
+        "test_error_rate": test_errors / len(y_test),
+        "train_errors": count_errors(ema_model, X_train, y_train),
+        "raw_model_train_errors": count_errors(model, X_train, y_train),
+    }
+    print(f"final: {final}")
+    log_path.write_text(json.dumps({"config": config, "final": final, "history": history}, indent=2))
+
+    CHECKPOINT_DIR.mkdir(exist_ok=True)
     torch.save(
-        {"config": config, "model": cpu_state_dict(model), "ema_model": cpu_state_dict(ema_model)},
-        CHECKPOINT_PATH,
+        {
+            "config": config,
+            "final": final,
+            "history": history,
+            "model": cpu_state_dict(model),
+            "ema_model": cpu_state_dict(ema_model),
+        },
+        checkpoint_path,
     )
-    print(f"saved {CHECKPOINT_PATH}")
+    print(f"saved {log_path} and {checkpoint_path}")
 
 
 if __name__ == "__main__":
