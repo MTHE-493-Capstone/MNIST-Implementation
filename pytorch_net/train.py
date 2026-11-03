@@ -1,5 +1,7 @@
 import copy
+import json
 import time
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -16,6 +18,7 @@ EPOCHS = 200
 BATCH_SIZE = 100
 SEED = 0
 EMA_DECAY = 0.999
+LOG_PATH = Path(__file__).parent.parent / "logs" / "baseline.json"
 
 
 def make_optimizer(model: nn.Module) -> torch.optim.Adam:
@@ -52,6 +55,18 @@ def main() -> None:
     ema_model = make_ema(model)
     optimizer = make_optimizer(model)
     scheduler = make_scheduler(optimizer)
+    config = {
+        "lr": LR,
+        "betas": BETAS,
+        "lr_step_epochs": LR_STEP_EPOCHS,
+        "lr_gamma": LR_GAMMA,
+        "epochs": EPOCHS,
+        "batch_size": BATCH_SIZE,
+        "seed": SEED,
+        "ema_decay": EMA_DECAY,
+    }
+    history = []
+    LOG_PATH.parent.mkdir(exist_ok=True)
     print(f"device {device}  epochs {EPOCHS}  batch {BATCH_SIZE}  steps/epoch {len(X_train) // BATCH_SIZE}")
 
     for epoch in range(1, EPOCHS + 1):
@@ -76,6 +91,18 @@ def main() -> None:
             f"(raw model test acc {raw_test_acc:.4f})  "
             f"({time.perf_counter() - start:.1f}s)"
         )
+
+        history.append(
+            {
+                "epoch": epoch,
+                "lr": lr,
+                "train_loss_bits": train_loss,
+                "train_acc": train_acc,
+                "test_loss_bits": test_loss,
+                "test_acc": test_acc,
+            }
+        )
+        LOG_PATH.write_text(json.dumps({"config": config, "history": history}, indent=2))
 
 
 if __name__ == "__main__":
