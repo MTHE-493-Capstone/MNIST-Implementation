@@ -12,6 +12,10 @@ class MLP(nn.Module):
             nn.ReLU(),
             nn.Linear(1024, 10),
         )
+        for layer in self.layers:
+            if isinstance(layer, nn.Linear):
+                nn.init.xavier_uniform_(layer.weight)
+                nn.init.zeros_(layer.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.layers(x)
