@@ -46,7 +46,9 @@ class VIB(nn.Module):
         mu, sigma_raw = self.encoder(x).chunk(2, dim=1)
         return mu, F.softplus(sigma_raw - SIGMA_SHIFT)
 
+    def sample(self, mu: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
+        return mu + sigma * torch.randn_like(sigma)
+
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         mu, sigma = self.encode(x)
-        z = mu + sigma * torch.randn_like(sigma)
-        return self.decoder(z), mu, sigma
+        return self.decoder(self.sample(mu, sigma)), mu, sigma
