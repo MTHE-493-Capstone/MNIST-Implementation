@@ -19,6 +19,7 @@ BATCH_SIZE = 100
 SEED = 0
 EMA_DECAY = 0.999
 LOG_PATH = Path(__file__).parent.parent / "logs" / "baseline.json"
+CHECKPOINT_PATH = Path(__file__).parent.parent / "checkpoints" / "baseline.pt"
 
 
 def make_optimizer(model: nn.Module) -> torch.optim.Adam:
@@ -39,6 +40,10 @@ def make_ema(model: nn.Module) -> nn.Module:
 def update_ema(ema_model: nn.Module, model: nn.Module) -> None:
     for ema_p, p in zip(ema_model.parameters(), model.parameters()):
         ema_p.mul_(EMA_DECAY).add_(p, alpha=1 - EMA_DECAY)
+
+
+def cpu_state_dict(model: nn.Module) -> dict[str, torch.Tensor]:
+    return {name: t.cpu() for name, t in model.state_dict().items()}
 
 
 @torch.no_grad()
@@ -103,6 +108,13 @@ def main() -> None:
             }
         )
         LOG_PATH.write_text(json.dumps({"config": config, "history": history}, indent=2))
+
+    CHECKPOINT_PATH.parent.mkdir(exist_ok=True)
+    torch.save(
+        {"config": config, "model": cpu_state_dict(model), "ema_model": cpu_state_dict(ema_model)},
+        CHECKPOINT_PATH,
+    )
+    print(f"saved {CHECKPOINT_PATH}")
 
 
 if __name__ == "__main__":
