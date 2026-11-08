@@ -22,6 +22,7 @@ BATCH_SIZE = 100
 EMA_DECAY = 0.999
 DEFAULT_BETA = 10**-3.5
 EVAL_SAMPLES = 12
+NUM_CLASSES = 10
 LOG_DIR = Path(__file__).parent.parent / "logs"
 CHECKPOINT_DIR = Path(__file__).parent.parent / "checkpoints"
 
@@ -79,17 +80,22 @@ def evaluate(model: nn.Module, X: torch.Tensor, y: torch.Tensor) -> dict[str, fl
         [F.log_softmax(model.decoder(model.sample(mu, sigma)), dim=1) for _ in range(EVAL_SAMPLES)]
     )
     mean_log_probs = torch.logsumexp(log_probs, dim=0) - math.log(EVAL_SAMPLES)
+    one_sample = score(log_probs[0], y)
     return {
-        **score(log_probs[0], y),
+        **one_sample,
         **score(mean_log_probs, y, f"_{EVAL_SAMPLES}"),
-        "kl_bits": (gaussian_kl(mu, sigma) / LN2).item(),
+        "ixz_bits": (gaussian_kl(mu, sigma) / LN2).item(),
+        "izy_bits": math.log2(NUM_CLASSES) - one_sample["loss_bits"],
     }
 
 
 def describe(metrics: dict[str, float | int]) -> str:
     text = f"loss {metrics['loss_bits']:.4f} bits  acc {metrics['acc']:.4f}"
-    if "kl_bits" in metrics:
-        text += f"  acc{EVAL_SAMPLES} {metrics[f'acc_{EVAL_SAMPLES}']:.4f}  kl {metrics['kl_bits']:.1f} bits"
+    if "ixz_bits" in metrics:
+        text += (
+            f"  acc{EVAL_SAMPLES} {metrics[f'acc_{EVAL_SAMPLES}']:.4f}"
+            f"  I(X;Z) {metrics['ixz_bits']:.1f}  I(Z;Y) {metrics['izy_bits']:.3f} bits"
+        )
     return text
 
 
@@ -169,7 +175,10 @@ def main() -> None:
             f"test_errors_{EVAL_SAMPLES}": test[f"errors_{EVAL_SAMPLES}"],
             f"test_error_rate_{EVAL_SAMPLES}": test[f"errors_{EVAL_SAMPLES}"] / len(y_test),
             f"train_errors_{EVAL_SAMPLES}": train[f"errors_{EVAL_SAMPLES}"],
-            "train_kl_bits": train["kl_bits"],
+            "train_ixz_bits": train["ixz_bits"],
+            "train_izy_bits": train["izy_bits"],
+            "test_ixz_bits": test["ixz_bits"],
+            "test_izy_bits": test["izy_bits"],
         }
     print(f"final: {final}")
     log_path.write_text(json.dumps({"config": config, "final": final, "history": history}, indent=2))
