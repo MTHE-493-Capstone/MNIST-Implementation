@@ -4,17 +4,14 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
+from plot_style import SERIES, SURFACE, TEXT_PRIMARY, TEXT_SECONDARY, set_title, style_axes
+
 ROOT = Path(__file__).parent.parent
 LOG_DIR = ROOT / "logs"
 FIG_PATH = ROOT / "figures" / "baseline_curves.png"
 SUMMARY_PATH = LOG_DIR / "baseline_summary.json"
 REPORT_TRAIN_ERRORS = 28
 
-SURFACE = "#fcfcfb"
-TEXT_PRIMARY = "#0b0b0b"
-TEXT_SECONDARY = "#52514e"
-GRID = "#e4e3df"
-SERIES = ["#2a78d6", "#eb6834", "#1baf7a"]
 TEST_ACC_FLOOR = 97.0
 TEST_ACC_CEILING = 99.0
 
@@ -93,22 +90,15 @@ def plot(runs: list[dict]) -> None:
 
     ax_loss.set_yscale("log")
     ax_loss.set_ylabel("training loss (bits, log scale)", color=TEXT_SECONDARY)
-    ax_loss.set_title("Training loss (EMA model, full training set)", loc="left", color=TEXT_PRIMARY, fontsize=11)
+    set_title(ax_loss, "Training loss (EMA model, full training set)")
     ax_acc.set_ylim(TEST_ACC_FLOOR, TEST_ACC_CEILING)
     ax_acc.set_ylabel(f"test accuracy (%), axis from {TEST_ACC_FLOOR:.0f}%", color=TEXT_SECONDARY)
     ax_acc.set_xlabel("epoch", color=TEXT_SECONDARY)
     ax_acc.set_xlim(0, last_epoch + 2)
-    ax_acc.set_title("Test accuracy (EMA model); results reported at epoch 200", loc="left", color=TEXT_PRIMARY, fontsize=11)
+    set_title(ax_acc, "Test accuracy (EMA model); results reported at epoch 200")
 
-    for ax in (ax_loss, ax_acc):
-        ax.set_facecolor(SURFACE)
-        ax.grid(color=GRID, linewidth=0.6)
-        ax.tick_params(colors=TEXT_SECONDARY, labelsize=9)
-        for side in ("top", "right"):
-            ax.spines[side].set_visible(False)
-        for side in ("left", "bottom"):
-            ax.spines[side].set_color(GRID)
-        ax.legend(frameon=False, fontsize=9, labelcolor=TEXT_SECONDARY, loc="upper right" if ax is ax_loss else "lower right")
+    style_axes(ax_loss, "upper right")
+    style_axes(ax_acc, "lower right")
 
     fig.suptitle("Deterministic baseline, 784-1024-1024-10, 3 seeds", x=0.01, ha="left", color=TEXT_PRIMARY, fontsize=13)
     fig.tight_layout()
