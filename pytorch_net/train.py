@@ -26,6 +26,10 @@ LOG_DIR = Path(__file__).parent.parent / "logs"
 CHECKPOINT_DIR = Path(__file__).parent.parent / "checkpoints"
 
 
+def run_name(model: str, beta: float, seed: int) -> str:
+    return f"vib_beta{beta:.2e}_seed{seed}" if model == "vib" else f"baseline_seed{seed}"
+
+
 def make_optimizer(model: nn.Module) -> torch.optim.Adam:
     return torch.optim.Adam(model.parameters(), lr=LR, betas=BETAS)
 
@@ -96,9 +100,9 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
     is_vib = args.model == "vib"
-    run_name = f"vib_beta{args.beta:.2e}_seed{args.seed}" if is_vib else f"baseline_seed{args.seed}"
-    log_path = LOG_DIR / f"{run_name}.json"
-    checkpoint_path = CHECKPOINT_DIR / f"{run_name}.pt"
+    name = run_name(args.model, args.beta, args.seed)
+    log_path = LOG_DIR / f"{name}.json"
+    checkpoint_path = CHECKPOINT_DIR / f"{name}.pt"
 
     torch.manual_seed(args.seed)
     device = get_device()
@@ -122,7 +126,7 @@ def main() -> None:
         config |= {"beta": args.beta, "z_dim": Z_DIM, "eval_samples": EVAL_SAMPLES}
     history = []
     LOG_DIR.mkdir(exist_ok=True)
-    print(f"{run_name}  device {device}  epochs {EPOCHS}  batch {BATCH_SIZE}  steps/epoch {len(X_train) // BATCH_SIZE}")
+    print(f"{name}  device {device}  epochs {EPOCHS}  batch {BATCH_SIZE}  steps/epoch {len(X_train) // BATCH_SIZE}")
 
     for epoch in range(1, EPOCHS + 1):
         start = time.perf_counter()
