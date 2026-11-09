@@ -38,10 +38,10 @@ def beta_x(beta: float) -> float:
     return beta if beta > 0 else ZERO_BETA_X
 
 
-def load_runs(seed: int) -> dict[float, dict]:
+def load_runs(model: str, betas: list[float], seed: int) -> dict[float, dict]:
     runs = {}
-    for beta in SWEEP_BETAS:
-        path = LOG_DIR / f"{run_name('vib', beta, seed)}.json"
+    for beta in betas:
+        path = LOG_DIR / f"{run_name(model, beta, seed)}.json"
         run = json.loads(path.read_text()) if path.exists() else {}
         if "final" in run:
             runs[beta] = run
@@ -219,7 +219,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=0)
     seed = parser.parse_args().seed
-    runs = load_runs(seed)
+    runs = load_runs("vib", SWEEP_BETAS, seed)
     rows = summarize(runs)
     print_table(rows)
     print()
