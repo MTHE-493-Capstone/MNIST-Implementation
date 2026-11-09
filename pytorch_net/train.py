@@ -9,9 +9,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from losses import LN2, cross_entropy_bits, gaussian_kl, vib_loss_bits
+from losses import LN2, cross_entropy_bits, vib_loss_bits
 from mnist_data import batches, get_device, load_mnist
-from model import MLP, VIB, Z_DIM
+from model import MLP, VIB, VIB2D
 
 LR = 1e-4
 BETAS = (0.5, 0.999)
@@ -23,12 +23,13 @@ EMA_DECAY = 0.999
 DEFAULT_BETA = 10**-3.5
 EVAL_SAMPLES = 12
 NUM_CLASSES = 10
+MODELS = {"baseline": MLP, "vib": VIB, "vib2d": VIB2D}
 LOG_DIR = Path(__file__).parent.parent / "logs"
 CHECKPOINT_DIR = Path(__file__).parent.parent / "checkpoints"
 
 
 def run_name(model: str, beta: float, seed: int) -> str:
-    return f"vib_beta{beta:.2e}_seed{seed}" if model == "vib" else f"baseline_seed{seed}"
+    return f"baseline_seed{seed}" if model == "baseline" else f"{model}_beta{beta:.2e}_seed{seed}"
 
 
 def make_optimizer(model: nn.Module) -> torch.optim.Adam:
@@ -57,8 +58,8 @@ def cpu_state_dict(model: nn.Module) -> dict[str, torch.Tensor]:
 
 def training_loss(model: nn.Module, xb: torch.Tensor, yb: torch.Tensor, beta: float) -> torch.Tensor:
     if isinstance(model, VIB):
-        logits, mu, sigma = model(xb)
-        return vib_loss_bits(logits, yb, mu, sigma, beta)[0]
+        logits, mu, scale = model(xb)
+        return vib_loss_bits(logits, yb, model.kl(mu, scale), beta)[0]
     return cross_entropy_bits(model(xb), yb)
 
 
@@ -75,16 +76,16 @@ def score(log_probs: torch.Tensor, y: torch.Tensor, suffix: str = "") -> dict[st
 def evaluate(model: nn.Module, X: torch.Tensor, y: torch.Tensor) -> dict[str, float | int]:
     if not isinstance(model, VIB):
         return score(F.log_softmax(model(X), dim=1), y)
-    mu, sigma = model.encode(X)
+    mu, scale = model.encode(X)
     log_probs = torch.stack(
-        [F.log_softmax(model.decoder(model.sample(mu, sigma)), dim=1) for _ in range(EVAL_SAMPLES)]
+        [F.log_softmax(model.decoder(model.sample(mu, scale)), dim=1) for _ in range(EVAL_SAMPLES)]
     )
     mean_log_probs = torch.logsumexp(log_probs, dim=0) - math.log(EVAL_SAMPLES)
     one_sample = score(log_probs[0], y)
     return {
         **one_sample,
         **score(mean_log_probs, y, f"_{EVAL_SAMPLES}"),
-        "ixz_bits": (gaussian_kl(mu, sigma) / LN2).item(),
+        "ixz_bits": (model.kl(mu, scale) / LN2).item(),
         "izy_bits": math.log2(NUM_CLASSES) - one_sample["loss_bits"],
     }
 
@@ -101,11 +102,10 @@ def describe(metrics: dict[str, float | int]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", choices=["baseline", "vib"], default="baseline")
+    parser.add_argument("--model", choices=list(MODELS), default="baseline")
     parser.add_argument("--beta", type=float, default=DEFAULT_BETA)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
-    is_vib = args.model == "vib"
     name = run_name(args.model, args.beta, args.seed)
     log_path = LOG_DIR / f"{name}.json"
     checkpoint_path = CHECKPOINT_DIR / f"{name}.pt"
@@ -113,7 +113,8 @@ def main() -> None:
     torch.manual_seed(args.seed)
     device = get_device()
     X_train, y_train, X_test, y_test = load_mnist(device)
-    model = (VIB() if is_vib else MLP()).to(device)
+    model = MODELS[args.model]().to(device)
+    is_vib = isinstance(model, VIB)
     ema_model = make_ema(model)
     optimizer = make_optimizer(model)
     scheduler = make_scheduler(optimizer)
@@ -129,7 +130,7 @@ def main() -> None:
         "ema_decay": EMA_DECAY,
     }
     if is_vib:
-        config |= {"beta": args.beta, "z_dim": Z_DIM, "eval_samples": EVAL_SAMPLES}
+        config |= {"beta": args.beta, "z_dim": model.decoder.in_features, "eval_samples": EVAL_SAMPLES}
     history = []
     LOG_DIR.mkdir(exist_ok=True)
     print(f"{name}  device {device}  epochs {EPOCHS}  batch {BATCH_SIZE}  steps/epoch {len(X_train) // BATCH_SIZE}")
